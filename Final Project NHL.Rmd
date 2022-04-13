@@ -29,6 +29,8 @@ API_stats = read_csv("NHL_players_stats.csv")
 # Attaching variables
 attach(contract_stats)
 attach(API_stats)
+
+
 ```
 
 ```{r setup 2, include=FALSE}
