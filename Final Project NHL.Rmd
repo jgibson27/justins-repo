@@ -1,0 +1,245 @@
+---
+title: "Final Assignment"
+author: "Justin Gibson"
+date: "31/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+list=ls(all=TRUE)
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(readr)
+library("writexl")
+library(ggplot2)
+library(gbm)
+library(glmnet)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(tidyverse)
+```
+
+```{r setup 1, include=FALSE}
+# Importing of CSV files
+contract_stats <- read_csv("NHL_player_stats_contracts_cool.csv")
+API_stats = read_csv("NHL_players_stats.csv")
+
+# Attaching variables
+attach(contract_stats)
+attach(API_stats)
+```
+
+```{r setup 2, include=FALSE}
+# Merging tables to data frame
+NHL.df = data.frame(merge(contract_stats, API_stats,by="Player"))
+
+# Outputting dataframe to a CSV
+write_xlsx(NHL.df)
+tempfile(fileext = ".xlsx")
+
+# Importing CSV after formatting modifications in Excel
+NHL.df = data.frame(read_csv("/Users/justingibson/Desktop/Adv Topics Fin/NHL Final Project/NHL_df.csv"))
+attach(NHL.df)
+```
+
+
+```{r introduction}
+# If there are any missing salaries for any NHL player, this gets rid of them
+NHL.df = NHL.df[complete.cases(Salary),]
+
+# removing every player on a entry level contract
+NHL.df = NHL.df %>%
+  filter(Salary >= 950000)
+
+# Plotting every NHL player and their respected salary
+player.num.vec = c(1:463)
+sal.intro.plot = ggplot(NHL.df, aes(x=player.num.vec, y=Salary)) + geom_point()
+sal.intro.plot
+```
+
+This plot shows the importance of this research question. It is evident that NHL hockey players' salaries vary greatly amongst NHL players and there is a lot more research we can do to understand why a hockey player is being paid a given salary.
+
+```{r introduction 1}
+# Log transformation of Salaries
+NHL.df$Salary = log(NHL.df$Salary)
+
+# New plot of NHL players' salaries
+sal.intro.plot.log = ggplot(NHL.df, aes(x=player.num.vec, y=Salary)) + geom_point()
+sal.intro.plot.log
+```
+
+
+```{r sampling data for test and train}
+# Creating test and training dat
+samp_set = sample(nrow(NHL.df), 0.75*nrow(NHL.df))
+train = NHL.df[samp_set,]
+test = NHL.df[-samp_set,]
+```
+
+
+```{r linear regression}
+set.seed(1)
+lin.reg = lm(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data = NHL.df)
+
+summary(lin.reg)
+
+```
+
+Omitted logistic variables, but kept all numeric variables. This provided very interesting results, we now have a better understanding of what variables have explanatory power for the independent variable, salary. The variables: Age, contract.length, assists, games, and face_off_perc all have explanatory power. Further linear regression will be completed below to determine what variables have the most explanatory power by removing variables that have little explanatory power.
+
+One variable was removed if two variables have strong a correlation, i.e (shots & shot_perc, t_on_ice & shifts). Other variables were removed as well that had high p-values.
+
+```{r lin reg explanatory power}
+lin.reg1 = lm(Salary ~ Age + Contract.Length + assists + goals + pp_points + shots + games + face_off_perc + short_hand_points + plus_minus + shifts + pp_t_on_ice, data = NHL.df)
+
+summary(lin.reg1)
+```
+Shots, face_off_perc, and plus_minus are removed as they all are not significant
+
+```{r}
+lin.reg2 = lm(Salary ~ Age + Contract.Length + assists + goals + games + short_hand_points + shifts + pp_t_on_ice, data = NHL.df)
+
+summary(lin.reg2)
+```
+Not surprisingly contract length is correlated with Salaries. It is understandable that NHL teams want to sign players for long contracts if they are going to invest in them and their performance.
+
+```{r}
+lin.reg3 = lm(Salary ~ Age + Contract.Length + assists + games + pp_t_on_ice, data = NHL.df)
+
+summary(lin.reg3)
+```
+
+
+```{r boost reg}
+set.seed(2)
+
+# Boost reg
+boost.NHL = gbm(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=NHL.df, distribution = "gaussian", n.trees = 1000, interaction.depth = 4)
+
+# Summary of boost reg
+summary(boost.NHL)
+```
+By preforming a boost regression on the entire NHL data frame, it is evident that Contract Length has the most explanatory power with respect to Salary. The runner up is pp_t_on_ice which is power play time on ice. This is a surprising result. This tells a different story then the simple linear regression preformed above where power play time on ice was less significant then many other variables.
+
+
+```{r boost prediction and MSE}
+# Boost reg with training data set
+boost.NHL.t = gbm(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=train, distribution = "gaussian", n.trees = 1000, interaction.depth = 4)
+
+# Boost Prediction
+pred.boost = predict(boost.NHL.t, data = train, n.trees = 1000, interaction.depth = 4)
+
+# MSE 
+boost.mse = mean((pred.boost - train$Salary)^2)
+
+boost.mse
+```
+
+```{r filtering by position}
+# Using dplyr to filter for all forward position NHL players
+forwards.vec = c("LW", "RW", "C")
+
+forwards.df = NHL.df %>%
+  filter(Position %in% forwards.vec)
+
+# Using dplyr to filter for all defense position NHL players
+defense.vec = c("D")
+
+defense.df = NHL.df %>%
+  filter(Position %in% defense.vec)
+```
+
+```{r training and test set for forward and defense players}
+# Train and test set for all forwards players
+samp.set.for = sample(nrow(forwards.df), 0.75*nrow(forwards.df))
+train.for = forwards.df[samp.set.for,]
+test.for = forwards.df[-samp.set.for,]
+
+# Train and test set for all defense players
+samp.set.def = sample(nrow(defense.df), 0.75*nrow(defense.df))
+train.def = defense.df[samp.set.def,]
+test.def = defense.df[-samp.set.def,]
+```
+
+```{r}
+# creating a function that preforms boost, lasso, and ridge regression which then graphs the results for a specified data set. MSE using training data
+
+reg.func = function(df1, df2) {
+  # Boost reg
+  boost.NHL = gbm(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=df1, distribution = "gaussian", n.trees = 1000, interaction.depth = 4)
+  
+  # Boost Prediction
+pred.boost = predict(boost.NHL, data = df1, n.trees = 1000, interaction.depth = 4)
+
+# MSE 
+boost.mse = mean((pred.boost - df1$Salary)^2)
+
+boost.mse
+
+  # Test MSE from ridge regression
+# Creating matrices
+x = model.matrix(Salary ~ ., data=df1)
+z = model.matrix(Salary ~ ., data=df2)
+y = df1$Salary
+
+x = model.matrix(Salary ~ ., data=train)
+z = model.matrix(Salary ~ ., data=test)
+y = train$Salary
+
+# Creating grid
+grid1 = 10^seq(4,-2,length=100)
+
+# Use glmnet
+ridge = glmnet(x, y, alpha=0, lambda=grid1, thresh=1e-12)
+
+# Cross Validation
+cr_ridge = cv.glmnet(x, y, alpha=0, lambda=grid1, thresh=1e-12)
+
+# Finding Lambda
+lam = cr_ridge$lambda.min
+
+# New prediction
+new_pred = predict(ridge, s=lam, newx=z)
+
+#MSE
+ridge_mse = mean((df2$Salary - new_pred)^2)
+
+ridge_mse
+
+
+
+# Lasso Regression
+lasso = glmnet(x, y, alpha=1, lambda=grid1, thresh=1e-12)
+
+# Cross Val
+cr_val = cv.glmnet(x, y, alpha=1, lambda=grid1, thresh=1e-12)
+
+# Find Lambda
+lam1 = cr_val$lambda.min
+
+# New prediction
+new_pred1 = predict(lasso, s=lam1, newx=z)
+
+# MSE
+lasso_mse = mean((df2$Salary - new_pred1)^2)
+
+
+# Comparing the three MSEs
+mse_vec = c(boost_mse, ridge_mse,lasso_mse)
+name_vec = c("Boost MSE","Ridge MSE","Lasso MSE")
+ggplot(data=NULL, aes(x=name_vec,y=mse_vec)) + geom_col(width=0.5)
+}
+
+reg.func(train,test)
+
+```
+
+
+
+
+
+
+
+
