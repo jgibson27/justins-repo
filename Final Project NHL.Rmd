@@ -19,33 +19,14 @@ library(randomForest)
 library(rpart)
 library(rpart.plot)
 library(tidyverse)
-
-
+library(tibble)
 
 # cd ~/Desktop/Final\ Project
 # git commit -am "Message"
 # git push
 ```
 
-```{r setup 1, include=FALSE}
-# Importing of CSV files
-contract_stats <- read_csv("NHL_player_stats_contracts_cool.csv")
-API_stats = read_csv("NHL_players_stats.csv")
-
-# Attaching variables
-attach(contract_stats)
-attach(API_stats)
-
-```
-
 ```{r setup 2, include=FALSE}
-# Merging tables to data frame
-NHL.df = data.frame(merge(contract_stats, API_stats,by="Player"))
-
-# Outputting dataframe to a CSV
-write_xlsx(NHL.df)
-tempfile(fileext = ".xlsx")
-
 # Importing CSV after formatting modifications in Excel
 NHL.df = data.frame(read_csv("/Users/justingibson/Desktop/Adv Topics Fin/NHL Final Project/NHL_df.csv"))
 attach(NHL.df)
@@ -72,20 +53,14 @@ This plot shows the importance of this research question. It is evident that NHL
 NHL.df$Salary = log(NHL.df$Salary)
 
 # New plot of NHL players' salaries
-sal.intro.plot.log = ggplot(NHL.df, aes(x=player.num.vec, y=Salary)) + geom_point()
+sal.intro.plot.log = ggplot(NHL.df, aes(x=player.num.vec, y=NHL.df$Salary)) + geom_point()
 sal.intro.plot.log
 ```
 
-```{r sampling data for test and train}
-# Creating test and training data
-samp_set = sample(nrow(NHL.df), 0.75*nrow(NHL.df))
-train = NHL.df[samp_set,]
-test = NHL.df[-samp_set,]
-```
-
 ```{r linear regression}
+# Linear regression on all the data to see if any variables can explain all players
 set.seed(1)
-lin.reg = lm(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data = NHL.df)
+lin.reg = lm(NHL.df$Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data = NHL.df)
 
 summary(lin.reg)
 
@@ -96,7 +71,8 @@ Omitted logistic variables, but kept all numeric variables. This provided very i
 One variable was removed if two variables have strong a correlation, i.e (shots & shot_perc, t_on_ice & shifts). Other variables were removed as well that had high p-values.
 
 ```{r lin reg explanatory power}
-lin.reg1 = lm(Salary ~ Age + Contract.Length + assists + goals + pp_points + shots + games + face_off_perc + short_hand_points + plus_minus + shifts + pp_t_on_ice, data = NHL.df)
+#Removed variables, hoping to find variables with more explanatory power
+lin.reg1 = lm(NHL.df$Salary ~ Age + Contract.Length + assists + goals + pp_points + shots + games + face_off_perc + short_hand_points + plus_minus + shifts + pp_t_on_ice, data = NHL.df)
 
 summary(lin.reg1)
 ```
@@ -104,7 +80,8 @@ summary(lin.reg1)
 Shots, face_off_perc, and plus_minus are removed as they all are not significant
 
 ```{r}
-lin.reg2 = lm(Salary ~ Age + Contract.Length + assists + goals + games + short_hand_points + shifts + pp_t_on_ice, data = NHL.df)
+# More variables were taken out, notice the increased r^2 below
+lin.reg2 = lm(NHL.df$Salary ~ Age + Contract.Length + assists + goals + games + short_hand_points + shifts + pp_t_on_ice, data = NHL.df)
 
 summary(lin.reg2)
 ```
@@ -112,129 +89,225 @@ summary(lin.reg2)
 Not surprisingly contract length is correlated with Salaries. It is understandable that NHL teams want to sign players for long contracts if they are going to invest in them and their performance.
 
 ```{r}
-lin.reg3 = lm(Salary ~ Age + Contract.Length + assists + games + pp_t_on_ice, data = NHL.df)
+lin.reg3 = lm(NHL.df$Salary ~ Age + Contract.Length + assists + games + pp_t_on_ice, data = NHL.df)
 
 summary(lin.reg3)
 ```
 
-```{r boost reg}
-set.seed(2)
-
-# Boost reg
-boost.NHL = gbm(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=NHL.df, distribution = "gaussian", n.trees = 1000, interaction.depth = 4)
-
-# Summary of boost reg
-summary(boost.NHL)
-```
-
-By preforming a boost regression on the entire NHL data frame, it is evident that Contract Length has the most explanatory power with respect to Salary. The runner up is pp_t\_on_ice which is power play time on ice. This is a surprising result. This tells a different story then the simple linear regression preformed above where power play time on ice was less significant then many other variables.
-
-```{r boost prediction and MSE}
-# Boost reg with training data set
-boost.NHL.t = gbm(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=train, distribution = "gaussian", n.trees = 1000, interaction.depth = 4)
-
-# Boost Prediction
-pred.boost = predict(boost.NHL.t, newdata = test, n.trees = 1000, interaction.depth = 4)
-
-# MSE 
-boost.mse = mean((pred.boost - test$Salary)^2)
-
-boost.mse
-```
-
 ```{r filtering by position}
-# Using dplyr to filter for all forward position NHL players
+# Using dplyr to filter for all forward position NHL players (grouping all forwards)
 forwards.vec = c("LW", "RW", "C")
 
 forwards.df = NHL.df %>%
   filter(Position %in% forwards.vec)
 
-# Using dplyr to filter for all defense position NHL players
+# Using dplyr to filter for all defense position NHL players (grouping all defense)
 defense.vec = c("D")
 
 defense.df = NHL.df %>%
   filter(Position %in% defense.vec)
+
 ```
 
 ```{r training and test set for forward and defense players}
+set.seed(2)
 # Train and test set for all forwards players
 samp.set.for = sample(nrow(forwards.df), 0.75*nrow(forwards.df))
 train.for = forwards.df[samp.set.for,]
 test.for = forwards.df[-samp.set.for,]
 
+
 # Train and test set for all defense players
 samp.set.def = sample(nrow(defense.df), 0.75*nrow(defense.df))
 train.def = defense.df[samp.set.def,]
 test.def = defense.df[-samp.set.def,]
+
+
+```
+
+
+```{r lin reg forwards}
+# Linear regression process on all forwards
+lin.reg.for = lm(train.for$Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data = train.for)
+
+summary(lin.reg.for)
+```
+Keeping all performance measures that seem applicable to forward players. Removing very p-value variables
+
+```{r lin reg forwards 1}
+# Got rid of Contract length + Plus_minus + shot_perc + shifts + pen_min + points
+lin.reg.for.1 = lm(train.for$Salary ~ Age + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + face_off_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked, data = train.for)
+
+summary(lin.reg.for.1)
+```
+
+
+```{r}
+# Got rid of games, goals, pim, game win goals, short hand goals
+lin.reg.for.2 = lm(train.for$Salary ~ Age + t_on_ice + assists + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + over_t_goals + short_hand_t_on_ice + blocked + points, data = train.for)
+
+summary(lin.reg.for.2)
+
 ```
 
 ```{r}
-# creating a function that preforms boost, lasso, and ridge regression which then graphs the results for a specified data set. MSE using training data
+# Got rid of shots, pp_goals, pen_min
+lin.reg.for.3 = lm(train.for$Salary ~ Age + t_on_ice + assists + games + hits + pp_points + pp_t_on_ice + even_t_on_ice + face_off_perc + over_t_goals + short_hand_t_on_ice + blocked + points, data = train.for)
 
-reg.func = function(df1, df2, Title) {
-  # Boost reg
-  boost.NHL = gbm(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=df1, distribution = "gaussian", n.trees = 1000, interaction.depth = 4)
-  
-  # Boost Prediction
-  pred.boost = predict(boost.NHL, newdata = df2, n.trees = 1000, interaction.depth = 4)
-  
-  # MSE 
-  boost.mse = mean((pred.boost - df2$Salary)^2)
-  paste("Boost MSE =", print(boost.mse))
-  
-    # Test MSE from ridge regression
-  # Creating matrices
-  x = model.matrix(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=df1)
-  z = model.matrix(Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=df2)
-  y = df1$Salary
-  
-  # Creating grid
-  grid1 = 10^seq(4,-2,length=100)
-  
-  # Use glmnet
-  ridge = glmnet(x, y, alpha=0, lambda=grid1, thresh=1e-12)
-  
-  # Cross Validation
-  cr_ridge = cv.glmnet(x, y, alpha=0, lambda=grid1, thresh=1e-12)
-  
-  # Finding Lambda
-  lam = cr_ridge$lambda.min
-  
-  # New prediction
-  new_pred = predict(ridge, s=lam, newx=z)
-  
-  #MSE
-  ridge_mse = mean((df2$Salary - new_pred)^2)
-  
-  paste("Ridge MSE =", print(ridge_mse))
-  
-  # Lasso Regression
-  lasso = glmnet(x, y, alpha=1, lambda=grid1, thresh=1e-12)
-  
-  # Cross Val
-  cr_val = cv.glmnet(x, y, alpha=1, lambda=grid1, thresh=1e-12)
-  
-  # Find Lambda
-  lam1 = cr_val$lambda.min
-  
-  # New prediction
-  new_pred1 = predict(lasso, s=lam1, newx=z)
-  
-  # MSE
-  lasso_mse = mean((df2$Salary - new_pred1)^2)
-  
-  paste("Lasso MSE =", print(lasso_mse))
-  
-  # Comparing the three MSEs
-  mse_vec = c(boost.mse, ridge_mse,lasso_mse)
-  name_vec = c("Boost MSE","Ridge MSE","Lasso MSE")
-  ggplot(data=NULL, aes(x=name_vec,y=mse_vec)) + geom_col(width=0.5) + ggtitle(Title)
-}
+summary(lin.reg.for.3)
+```
 
-reg.func(train,test, "Train and Test for all Players")
+```{r}
+# Got rid of blocked, points, hits
+lin.reg.for.4 = lm(train.for$Salary ~ Age + t_on_ice + assists + games + pp_points + pp_t_on_ice + even_t_on_ice + face_off_perc + over_t_goals + short_hand_t_on_ice, data = train.for)
 
-reg.func(train.def,test, "Train and Test for all Defense Players")
+summary(lin.reg.for.4)
+```
 
-reg.func(train.for,test.for, "Train and Test for all Forward Players")
+```{r}
+# Predicting salary on test set
+for.pred.test = predict(lin.reg.for.4, newdata = test.for)
+
+# MSE on Linear Regression for forward players
+MSE.for = mean((for.pred.test - test.for$Salary)^2)
+MSE.for
+
+# Predicting salary for each player in the forwards data frame
+Linear.Prediction = predict(lin.reg.for.4, newdata=forwards.df)
+
+chg.salary.for.df = data.frame(forwards.df, Linear.Prediction)
+
+# Creating a change in salary column in new data frame
+chg.salary.for.df = chg.salary.for.df %>%
+  mutate(Change.in.Salary.Linear = forwards.df$Salary - Linear.Prediction)
+```
+
+```{r}
+# Linear regression process for defense players
+lin.reg.def = lm(train.def$Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + face_off_perc + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data = train.def)
+
+summary(lin.reg.def)
+```
+
+```{r}
+# Removed contract length, pen_min, face_off_perc, points, goals
+lin.reg.def.1 = lm(train.def$Salary ~ Age + t_on_ice + assists + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + shifts, data = train.def)
+
+summary(lin.reg.def.1)
+```
+
+```{r}
+# Removed over_t_goals, blocked, pp_goals, game_win_goals, short_hand_goals, short_hand_points
+lin.reg.def.2 = lm(train.def$Salary ~ Age + t_on_ice + assists + pim + shots + games + hits + pp_points + pp_t_on_ice + even_t_on_ice + shot_perc + short_hand_t_on_ice + plus_minus + shifts, data = train.def)
+
+summary(lin.reg.def.2)
+```
+
+```{r}
+# Removed assists, pim, hits, shot_perc
+lin.reg.def.3 = lm(train.def$Salary ~ Age + t_on_ice + shots + games + pp_points + pp_t_on_ice + even_t_on_ice + short_hand_t_on_ice + plus_minus + shifts, data = train.def)
+
+summary(lin.reg.def.3)
+```
+
+```{r}
+# Predicting salary for each defense player in test set
+def.pred.test = predict(lin.reg.def.3, newdata = test.def)
+
+# Mean squared error for linear regression of defense players
+MSE.def = mean((def.pred.test - test.def$Salary)^2)
+MSE.def
+
+# Predicting salary for each player in the defense player
+Linear.Prediction = predict(lin.reg.def.3, newdata=defense.df)
+
+chg.salary.def.df = data.frame(defense.df, Linear.Prediction)
+
+# Creating a change in salary column in new data frame
+chg.salary.def.df = chg.salary.def.df %>%
+  mutate(Change.in.Salary.Linear = defense.df$Salary - Linear.Prediction)
 
 ```
+
+```{r}
+# Creating a data frame of just player name, position and salary for each position
+
+forwards.df.conc = chg.salary.for.df %>%
+    select(Player,Position,Salary,Linear.Prediction,Change.in.Salary.Linear)  
+
+defense.df.conc = chg.salary.def.df %>%
+    select(Player,Position,Salary,Linear.Prediction,Change.in.Salary.Linear) 
+
+set.seed(3)
+
+  # Boost reg forwards
+boost.NHL.for = gbm(train.for$Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=train.for, distribution = "gaussian", n.trees = 1000, interaction.depth = 4)
+  
+  summary(boost.NHL.for)
+  
+  # Predicting the boost regression of forward players on test set
+  boost.NHL.pred.for = predict(boost.NHL.for, newdata=test.for, n.trees = 1000, interaction.depth = 4)
+  
+  # Mean squared error for boost regression of forward players
+  boost.MSE = mean((boost.NHL.pred.for - test.for$Salary)^2)
+  boost.MSE
+  
+  # Predicting salary for each player in the forward player
+  Boost.Prediction = predict(boost.NHL.for, newdata=forwards.df, n.trees = 1000, interaction.depth = 4)
+
+  Forwards.Salaries.df = data.frame(forwards.df.conc, Boost.Prediction)
+
+  # Creating a change in salary column in new data frame
+  Forwards.Salaries.df = Forwards.Salaries.df %>%
+   mutate(Change.in.Salary.for.Boost = forwards.df$Salary - Boost.Prediction)
+
+
+  # Boost reg defense
+  boost.NHL.def = gbm(train.def$Salary ~ Age + Contract.Length + t_on_ice + assists + goals + pim + shots + games + hits + pp_goals + pp_points + pp_t_on_ice + even_t_on_ice + pen_min + shot_perc + game_win_goals + over_t_goals + short_hand_goals + short_hand_points + short_hand_t_on_ice + blocked + plus_minus + points + shifts, data=train.def, distribution = "gaussian", n.trees = 1000, interaction.depth = 4)
+  
+  summary(boost.NHL.def)
+  
+  # Predicting boost regression on test set of defense players
+  boost.NHL.pred.def = predict(boost.NHL.def, newdata=test.def, n.trees = 1000, interaction.depth = 4)
+  
+  # Mean squared error of boost regression on test set
+  boost.MSE.def = mean((boost.NHL.pred.def - test.def$Salary)^2)
+  boost.MSE.def
+  
+  # Predicting salary for each player in the defense player
+  Boost.Prediction = predict(boost.NHL.def, newdata=defense.df, n.trees = 1000, interaction.depth = 4)
+
+  Defense.Salaries.df = data.frame(defense.df.conc, Boost.Prediction)
+
+  # Creating a change in salary column in new data frame
+  Defense.Salaries.df = Defense.Salaries.df %>%
+   mutate(Change.in.Salary.for.Boost = defense.df$Salary - Boost.Prediction)
+
+```
+
+By preforming a boost regression on the entire NHL data frame, it is evident that Contract Length has the most explanatory power with respect to Salary. The runner up is pp_t_on_ice which is power play time on ice. This is a surprising result. This tells a different story then the simple linear regression preformed above where power play time on ice was less significant then many other variables.
+
+
+```{r merging everything back into one table}
+# Preparing final data
+Forwards.Salaries.df = Forwards.Salaries.df %>%
+  mutate(Net.Change = mean(Change.in.Salary.Linear + Change.in.Salary.for.Boost)) %>%
+  mutate(Final.Salary = Forwards.Salaries.df$Salary + Net.Change)
+
+Defense.Salaries.df = Defense.Salaries.df %>%
+  mutate(Net.Change = mean(Change.in.Salary.Linear + Change.in.Salary.for.Boost)) %>%
+  mutate(Final.Salary = Defense.Salaries.df$Salary + Net.Change)
+
+Final.data = rbind(Forwards.Salaries.df, Defense.Salaries.df)
+Final.data = Final.data %>%
+  arrange(desc(Final.Salary))
+
+View(Final.data)
+
+```
+
+
+
+
+
+
